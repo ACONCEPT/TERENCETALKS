@@ -11,7 +11,27 @@ import pandas as pd
 import sqlalchemy
 from sqlalchemy import MetaData
 from sqlalchemy import text
+HOME = os.path.dirname(os.path.abspath(__file__))
+import csv
 
+def makedir(name):
+    if name[0] == '/':
+        dn = os.makedirs(HOME + name )
+    else:
+        dn = HOME + "/" + name
+        
+    try:
+        os.makedirs(dn)
+            
+        print("made dir {}".format(dn))
+    except FileExistsError:
+        print("dir {} already exists".format(dn))
+        
+        
+def checkdirs():
+    makedir("output")    
+    
+OUTPUT = HOME + "/output/"
 
 def findfromlist(targetlist,value):
     return [x for x in matchgenerator(targetlist,setmatch(value))]
@@ -74,6 +94,7 @@ class TerenceTalks(object):
                      ,talks_query = "select * from talks"
                      ,talks_index_query = "select * from all_talks"):
         
+        checkdirs()
         self.talks_db = talks_db
         self.index_db = index_db
         
@@ -95,13 +116,24 @@ class TerenceTalks(object):
             self.talks = self.talks.merge(self.join_talks_index,left_index = True, right_index = True)        
             
             self.talks_index = self.talks_index.set_index("id")        
-        
+            
+            textcount = len(self.join_talks_index)
+            
+            def divavg(row):
+                return (row['countsize'] / row['texts_aggregated'])
+            
+            self.talks_index['texts_aggregated'] = textcount
+            self.talks_index['wcavg'] = self.talks_index.apply(divavg,axis = 1)
+            
     def talkList(self, query = text("select * "
                                     "from information_schema.tables "
                                     "where TABLE_SCHEMA = 'talks_index' and TABLE_NAME != 'all_talks'")):
         
-        df= self.queryIndex(query)        
-        return list(df.TABLE_NAME.unique())
+#        df= self.queryIndex(query)        
+#        return list(df.TABLE_NAME.unique())
+        result = list(self.talks_index.tablename.unique())
+        
+        return result
     
     
     def istalk(self,name):
@@ -120,46 +152,80 @@ class TerenceTalks(object):
     def queryIndex(self,query):
         return self._query_something(self.index_db,query)
     
-    def getTalkIndex(self,talkid):
-        tn = self.talks.loc[talkid]["tablename"]
+    def getTalkIndex(self,tablename):
+        return self.queryIndex("select * from {}".format(tablename))
+        
+    def talkIndex(self,row):
+        print ("talkIndex got arg {}".format(row))
+        try:
+            tn = row['tablename']            
+        except TypeError:
+            if self.istalk(row):
+                tn = row
+        
         query = "select * from {}".format(tn)
-        self.queryIndex(query)
+        
+        return self.queryIndex(query)
+        
+    @staticmethod
+    def savefile(name,df, lod = False):
+        """
+        lod = list of dicts
+        creates a csv from a list of dictionaries
+        """
+        print ("making {} file".format(name))
+        name = OUTPUT + name + '.csv'
         
         
+        if lod:
+            try:
+                lod = df.T.to_dict().values()            
+            except:
+                lod = df
+            keys = list(lod[0].keys())
+            with open (name, 'w') as out:
+                dict_writer = csv.DictWriter(out,keys)
+                dict_writer.writeheader()
+                dict_writer.writerows(lod)        
+            return True
+        else:
+            df.to_csv(name)
+            return True
         
-    
+            
+            
+    def finddfs(self,return_names = False):
+        attributes = [x for x in dir(self) if x[0] != "_"]
+        resultdict = {}
+        resultlist = []
 
-if __name__ == "__main__":
+        for item in attributes:            
+            suspect = getattr(self,item)
+            if isinstance(suspect, pd.core.frame.DataFrame):
+                if return_names:
+                    resultlist.append(item)
+                else:
+                    resultdict[item] = suspect
+        
+        if return_names:
+            return  resultlist
+        else:
+            return resultdict
+        
+    def saveall(self):
+        dfs = self.finddfs()
+        for name,df in dfs.items():
+            self.savefile(name,df)
+            
+if __name__ == "__main__":    
     tt = TerenceTalks()
+#    tt.finddfs()
+    tt.saveall() 
     
-check = tt.talks
-
-#unique_table_names = tt.join_talks_index.tablename.unique()
 #
-#tt.talks.columns
 #
-#tt.talks = tt.talks[['id','title','location','talk_text','word_count','review_count']].set_index("")
+#check = tt.talks
+#type(check)
+##import os
 #
-#    
-#        
 #
-#tt.join_talks_index.columns
-##
-##tt.talks = tt.talks.drop(drop_cols,axis = 1).set_index("id")
-##
-##check = tt.talks_index
-##
-##tt.talks_index = tt.talks_index[['id','word','countsize','length']].set_index("id")
-##
-##tt.jointalks_index = tt.join_talks_index.drop(["id","title","date","shortlink"],axis = 1)\
-##                                        .set_index("talkid")
-##
-##
-##check = tt.join_talks_index 
-##
-##talks = tt.talks.set_index("id")
-##
-##
-##merged = talks.merge(jti, left_index = True, right_index = True)
-##
-##result = merged[[]]
